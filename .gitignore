@@ -1,0 +1,86 @@
+# ===== Dependencies / build =====
+node_modules/
+dist/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Flutter / Dart
+otochinhchu-app/build/
+otochinhchu-app/.dart_tool/
+otochinhchu-app/.flutter-plugins*
+otochinhchu-app/.packages
+otochinhchu-app/.pub-cache/
+otochinhchu-app/windows/flutter/ephemeral/
+otochinhchu-app/web/icons/Icon-*.png
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+.flutter-plugins-dependencies
+
+# Flutter web build output
+otochinhchu-app/build/web/
+
+# ===== Environment & secrets =====
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ===== Uploads / runtime data =====
+public/uploads/*
+!public/uploads/.gitkeep
+uploads/
+
+# ===== Logs =====
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+flutter-clean.log*
+
+# ===== IDE / editor =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.cursorrules
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Docker local =====
+pgdata/
+docker-compose.override.yml
+
+# ===== Test & coverage =====
+coverage/
+.nyc_output/
+test-results/
+
+# ===== Temporary / QA scripts của quá trình phát triển =====
+otochinhchu-platform/qa-*.mjs
+otochinhchu-platform/fix-*.mjs
+otochinhchu-platform/add-*.mjs
+otochinhchu-platform/sync-*.mjs
+otochinhchu-platform/patch-*.mjs
+otochinhchu-platform/find-*.mjs
+otochinhchu-platform/check-*.mjs
+otochinhchu-platform/qa-*.png
+otochinhchu-platform/*.log
+otochinhchu-platform/build.log
+otochinhchu-platform/rebuild.log
+
+# Screenshots debug
+*.png.tmp

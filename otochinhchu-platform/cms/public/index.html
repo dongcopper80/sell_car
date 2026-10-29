@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OtoChinhChu CMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css?v=proto-4">
+</head>
+
+<body>
+  <div id="app"></div>
+  <script>
+    // CMS luôn mở vào khu vực quản trị; chặn vào nhầm trang chủ web
+    if (!location.hash || location.hash === '#/' || location.hash === '#') {
+      location.replace('#/cms');
+    }
+  </script>
+  <script src="/assets/cms.js?v=3"></script>
+</body>
+
+</html>

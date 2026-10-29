@@ -1,0 +1,96 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: oto_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: otochinhchu
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d otochinhchu"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # API NestJS (web + CMS + app cùng dùng). Build từ Dockerfile.
+  api:
+    build: .
+    container_name: oto_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_NAME: otochinhchu
+      DB_SYNC: "true"
+      JWT_SECRET: change-me-in-production
+      JWT_EXPIRES: 7d
+      UPLOAD_DIR: /app/public/uploads
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/public/uploads
+    command: sh -c "node dist/main.js"
+
+  # Chạy seed một lần: tạo schema + dữ liệu mẫu (admin/salon/buyer)
+  seed:
+    build: .
+    container_name: oto_seed
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_NAME: otochinhchu
+    command: npm run seed
+
+  # Website công khai (SPA) — port 3001
+  web:
+    image: node:20-alpine
+    container_name: oto_web
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./web:/app
+    ports:
+      - "3001:3001"
+    command: node server.js
+    environment:
+      PORT: 3001
+    depends_on:
+      - api
+
+  # CMS quản trị (SPA) — port 3002
+  cms:
+    image: node:20-alpine
+    container_name: oto_cms
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./cms:/app
+    ports:
+      - "3002:3002"
+    command: node server.js
+    environment:
+      PORT: 3002
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads:

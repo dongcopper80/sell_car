@@ -1,0 +1,954 @@
+/**
+ * OtoChinhChu web + CMS — SPA hoàn chỉnh (viết lại sạch UTF-8).
+ * Bản này dùng cho cả web (app.js) và CMS (cms.js).
+ */
+const API_BASE = localStorage.getItem('aoto_api') || 'http://localhost:3000/api/v1';
+
+/** TEST MODE: tự đăng nhập admin để test toàn bộ. Tắt: localStorage.setItem('aoto_test_mode','0') */
+const USE_TEST_MODE = localStorage.getItem('aoto_test_mode') !== '0';
+const TEST_ACCOUNT = { email: 'admin@otochinhchu.vn', password: 'admin123' };
+
+const state = {
+  token: localStorage.getItem('aoto_token') || null,
+  user: JSON.parse(localStorage.getItem('aoto_user') || 'null'),
+};
+
+const iconPaths = {
+  arrow: '<path d="M5 12h14m-6-6 6 6-6 6"></path>',
+  check: '<path d="m5 12 4 4L19 6"></path>',
+  close: '<path d="m6 6 12 12M18 6 6 18"></path>',
+  search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
+  user: '<circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path>',
+  shield: '<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"></path><path d="m9 12 2 2 4-4"></path>',
+  pin: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></path>',
+  clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></path>',
+  download: '<path d="M12 3v12m-5-5 5 5 5-5M5 21h14"></path>',
+  plus: '<path d="M12 5v14M5 12h14"></path>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"></path>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8m-8 4h8"></path>',
+  chart: '<path d="M4 19V5m0 14h17M8 15l3-4 3 2 5-7"></path>',
+  layers: '<path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5M3 17l9 5 9-5"></path>',
+  trash: '<path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"></path>',
+  edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>',
+  car: '<path d="M5 17h14M6 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0m8 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0M4 13l2-6h12l2 6v4H4v-4Z"></path>',
+  settings: '<circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"></path>',
+};
+const icon = (n) => `<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${iconPaths[n] || iconPaths.arrow}</svg></span>`;
+
+async function api(path, opts = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(opts.headers || {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || json.code || 'Lỗi không xác định');
+  return json.data ?? json;
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const vnd = (n) => new Intl.NumberFormat('vi-VN').format(Number(n)) + ' ₫';
+const initials = (s) => (s || '?').split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
+const statusClass = (s) => `status-${String(s).toLowerCase().replaceAll(' ', '-').replaceAll('_', '-')}`;
+const collectExternalPhotos = (v) => String(v || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+const photoFallback = () => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 400'><rect width='640' height='400' fill='#e6efe9'/><g fill='none' stroke='#9dbfab' stroke-width='10'><rect x='150' y='150' width='340' height='110' rx='30'/><circle cx='215' cy='280' r='32' fill='#fff'/><circle cx='425' cy='280' r='32' fill='#fff'/><path d='M180 160l40-40h200l40 40'/></g><text x='320' y='360' text-anchor='middle' font-family='Segoe UI' font-size='26' fill='#5d7a68'>OtoChinhChu</text></svg>`)}`;
+
+function toast(message, type = 'success') {
+  document.querySelector('.toast-region')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast-region';
+  el.innerHTML = `<div class="toast ${type === 'error' ? 'error' : ''}">${icon(type === 'error' ? 'close' : 'check')}<span>${esc(message)}</span></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+/* ---------- router ---------- */
+const routes = {};
+const route = (p, h) => { routes[p] = h; };
+const navigate = (h) => { location.hash = h; };
+const $ = (s) => document.querySelector(s);
+async function render() {
+  const [path, query] = (location.hash.slice(1) || '/').split('?');
+  const params = new URLSearchParams(query || '');
+  for (const pattern of Object.keys(routes)) {
+    const names = pattern.match(/:[^/]+/g) || [];
+    const m = path.match(new RegExp('^' + pattern.replace(/:[^/]+/g, '([^/]+)') + '$'));
+    if (m) {
+      const kwargs = {};
+      names.forEach((n, i) => { kwargs[n.slice(1)] = decodeURIComponent(m[i + 1]); });
+      try { await routes[pattern](kwargs, params); } catch (e) {
+        $('#app').innerHTML = webShell(`<div class="surface empty-state container"><div class="empty-icon">${icon('close')}</div><h3>Đã xảy ra lỗi</h3><p>${esc(e.message)}</p><a class="btn btn-outline" href="#/">Về trang chủ</a></div>`);
+      }
+      return;
+    }
+  }
+  $('#app').innerHTML = webShell(`<div class="surface empty-state container"><h3>404 — Không tìm thấy trang</h3><a class="btn" href="#/">Về trang chủ</a></div>`);
+}
+window.addEventListener('hashchange', render);
+
+async function ensureTestSession() {
+  if (!USE_TEST_MODE || state.token) return;
+  try {
+    const res = await api('/auth/login', { method: 'POST', body: TEST_ACCOUNT });
+    state.token = res.accessToken; state.user = res.user;
+    localStorage.setItem('aoto_token', res.accessToken);
+    localStorage.setItem('aoto_user', JSON.stringify(res.user));
+  } catch (err) { console.warn('[test-mode]', err.message); }
+}
+async function boot() { await ensureTestSession(); render(); }
+
+/* ---------- shells ---------- */
+const testBanner = () => USE_TEST_MODE ? `<div class="test-banner">🧪 Chế độ test — đăng nhập tự động bằng tài khoản admin. <button class="test-banner-btn" data-action="disable-test-mode">Tắt chế độ test</button></div>` : '';
+
+function siteHeader(active = '') {
+  return `<header class="site-header"><div class="site-header-inner">
+    <a class="brand" href="#/"><span class="brand-mark">A</span> OtoChinhChu</a>
+    <nav class="site-nav" id="site-nav">
+      <a href="#/" class="${active === 'home' ? 'active' : ''}">Trang chủ</a>
+      <a href="#/search" class="${active === 'search' ? 'active' : ''}">Tìm xe</a>
+      ${state.user ? `<a href="#/new-listing">Đăng tin</a><a href="#/my-listings">Tin của tôi</a>` : ''}
+    </nav>
+    <div class="header-actions">
+      ${state.user ? `<a class="btn btn-outline btn-sm" href="#/account">${icon('user')} ${esc(initials(state.user.fullName || state.user.email))}</a>` : `<button class="btn btn-sm" data-action="goto-auth">${icon('shield')} Đăng nhập VNeID</button>`}
+      <button class="icon-btn mobile-menu" data-action="toggle-site-menu">${icon('menu')}</button>
+    </div></div></header>`;
+}
+function siteFooter() {
+  return `<footer class="site-footer"><div class="container"><div class="footer-grid">
+    <div><a class="brand" href="#/" style="color:#fff"><span class="brand-mark">A</span> OtoChinhChu</a>
+      <p style="margin-top:12px;color:#b9cbc0;font-size:12px">Nền tảng mua bán ô tô chính chủ. Cá nhân định danh qua VNeID; doanh nghiệp được CMS xác minh hồ sơ.</p></div>
+    <div><h3>Người mua</h3><a href="#/search">Tìm xe</a><a href="#/help">Hướng dẫn an toàn</a></div>
+    <div><h3>Người bán</h3><a href="#/new-listing">Đăng tin</a><a href="#/my-listings">Quản lý tin đăng</a></div>
+    <div><h3>Doanh nghiệp</h3><a href="#/help">Hồ sơ xác minh</a><a href="#/cms">Truy cập CMS</a></div>
+  </div><div class="footer-bottom"><span>© 2026 OtoChinhChu (prototype)</span><span>Dữ liệu minh họa</span></div></div></footer>`;
+}
+const webShell = (content, active) => `${testBanner()}${siteHeader(active)}<main id="main-content">${content}</main>${siteFooter()}`;
+
+const NAV_GROUPS = [
+  ['Tổng quan', [['#/cms', 'cms', 'chart', 'Dashboard']]],
+  ['Vận hành', [['#/cms/vehicles', 'vehicles', 'car', 'Tin đăng'], ['#/cms/moderation', 'moderation', 'eye', 'Kiểm duyệt'], ['#/cms/business-accounts', 'business-accounts', 'shield', 'Tài khoản DN'], ['#/cms/salons', 'salons', 'pin', 'Showroom'], ['#/cms/deposits', 'deposits', 'clock', 'Đặt cọc'], ['#/cms/users', 'users', 'user', 'Người dùng']]],
+  ['Nội dung', [['#/cms/content', 'content', 'file', 'Trang nội dung'], ['#/#cms/legal', 'legal', 'file', 'Pháp lý'], ['#/cms/banners', 'banners', 'layers', 'Banner'], ['#/cms/media', 'media', 'layers', 'Media'], ['#/cms/campaigns', 'campaigns', 'chart', 'Chiến dịch']]],
+  ['Danh mục & dữ liệu', [['#/cms/catalog', 'catalog', 'layers', 'Catalog'], ['#/cms/attributes', 'attributes', 'settings', 'Thuộc tính'], ['#/cms/import-export', 'import-export', 'download', 'Nhập / xuất'], ['#/cms/tags', 'tags', 'edit', 'Tags & aliases'], ['#/cms/seo', 'seo', 'search', 'SEO']]],
+  ['Hệ thống', [['#/cms/audit', 'audit', 'file', 'Audit log'], ['#/cms/notifications', 'notifications', 'eye', 'Thông báo'], ['#/cms/templates', 'templates', 'file', 'Mẫu thông báo'], ['#/cms/support', 'support', 'user', 'Hỗ trợ'], ['#/cms/roles', 'roles', 'shield', 'Vai trò & quyền'], ['#/cms/security', 'security', 'shield', 'Bảo mật'], ['#/cms/integrations', 'integrations', 'layers', 'Tích hợp'], ['#/cms/archive', 'archive', 'layers', 'Lưu trữ'], ['#/cms/settings', 'settings', 'settings', 'Cấu hình']]],
+];
+
+function adminShell(content) {
+  if (!state.token) return renderCmsLogin();
+  const nav = NAV_GROUPS.map(([label, items]) => `<div class="nav-label">${esc(label)}</div>${items.map(([href, key, ico, name]) => `<a href="${href}" data-nav="${key}">${icon(ico)} ${esc(name)}</a>`).join('')}`).join('');
+  return `${testBanner()}<div class="admin-shell">
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="admin-brand"><a class="brand" href="#/" style="color:#fff"><span class="brand-mark">A</span> OtoChinhChu</a><small>OPERATIONS CONSOLE</small></div>
+      <nav class="admin-nav">${nav}</nav>
+      <div class="admin-sidebar-foot">Admin: ${esc(state.user?.email || '')}
+        <a href="#/" style="display:block;margin-top:10px;color:#e1f2e9">← Về Website</a>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%" data-action="cms-logout">Đăng xuất</button></div>
+    </aside>
+    <div class="admin-main">
+      <div class="admin-topbar">
+        <button class="icon-btn mobile-menu" data-action="toggle-sidebar">${icon('menu')}</button>
+        <div class="search-control">${icon('search')}<input placeholder="Tìm trong CMS..." data-search></div>
+        <div class="admin-top-actions"><span class="tiny muted">${esc(state.user?.email || '')}</span></div>
+      </div>
+      <div class="admin-content" id="cms-content">${content}</div>
+    </div>
+    <div class="mobile-overlay" id="mobile-overlay"></div></div>`;
+}
+function renderCmsLogin() {
+  $('#app').innerHTML = `<div class="auth-container"><div class="auth-card surface surface-pad" style="max-width:420px;margin:60px auto">
+    <span class="eyebrow">Quản trị</span><h1 style="font-size:26px">CMS Đăng nhập</h1>
+    <p class="muted tiny">Tài khoản doanh nghiệp chỉ được tạo từ CMS sau khi đối chiếu hồ sơ.</p>
+    <form id="cms-login"><div class="field"><label>Email</label><input name="email" type="email" required></div>
+    <div class="field"><label>Mật khẩu</label><input name="password" type="password" required></div>
+    <button class="btn" style="width:100%;margin-top:14px">Đăng nhập</button></form>
+    <p class="tiny muted" style="margin-top:12px"><a href="#/" style="color:var(--green-800)">← Về website</a></p></div></div>`;
+  $('#cms-login').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try {
+      const res = await api('/auth/login', { method: 'POST', body: f });
+      state.token = res.accessToken; state.user = res.user;
+      localStorage.setItem('aoto_token', res.accessToken); localStorage.setItem('aoto_user', JSON.stringify(res.user));
+      navigate('#/cms'); render();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+
+/* ---------- shared ---------- */
+const kpiCard = (label, value, sub, ico) => `<div class="kpi"><div class="kpi-top"><span>${esc(label)}</span><span class="kpi-icon">${icon(ico || 'chart')}</span></div><strong>${esc(value)}</strong><span class="tiny muted">${esc(sub || '')}</span></div>`;
+const cmsNoteDemo = () => `<div class="notice">Phần này hiển thị cấu trúc và dữ liệu mẫu như prototype. Khi kết nối backend tương ứng, dữ liệu thật sẽ tự thay thế.</div>`;
+const demoPanel = (title, desc, rows, cols) => `<div class="admin-title"><div><span class="eyebrow">CMS</span><h1>${esc(title)}</h1><p>${esc(desc)}</p></div></div>${cmsNoteDemo()}<div class="table-wrap" style="margin-top:14px"><table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+
+const fuelLabel = (f) => ({ petrol: 'Xăng', diesel: 'Diesel', electric: 'Điện', hybrid: 'Hybrid' }[f] || f);
+const transLabel = (t) => ({ automatic: 'Tự động', manual: 'Số sàn' }[t] || t);
+
+function vehicleCard(v) {
+  const seller = v.sellerType === 'business' ? 'Salon' : 'Cá nhân';
+  return `<article class="vehicle-card">
+    <a href="#/vehicle/${v.id}" class="vehicle-photo">
+      <img src="${esc((v.photos && v.photos[0]) || photoFallback())}" alt="${esc(v.title)}" loading="lazy" onerror="this.onerror=null;this.src='${photoFallback()}'">
+      <span class="photo-tag"><span class="status ${v.verified ? 'status-verified' : ''}">${v.verified ? 'Đã xác minh' : esc(seller)}</span></span></a>
+    <div class="vehicle-info">
+      <h3><a href="#/vehicle/${v.id}">${esc(v.title)}</a></h3>
+      <p class="vehicle-price">${vnd(v.priceVnd)}</p>
+      <p class="vehicle-meta"><span>${esc(v.year)}</span><span>${Number(v.odometerKm).toLocaleString('vi-VN')} km</span><span>${esc(fuelLabel(v.fuelType))}</span><span>${esc(transLabel(v.transmission))}</span></p>
+      <p class="vehicle-location">${icon('pin')} ${esc(v.location)}</p>
+      <div class="card-foot"><span class="seller-mini"><span class="avatar">${esc(initials(v.title))}</span> ${esc(seller)}</span><a class="btn btn-outline btn-sm" href="#/vehicle/${v.id}">Xem chi tiết</a></div>
+    </div></article>`;
+}
+
+/* ---------- WEB pages ---------- */
+route('/', async () => {
+  const [vehicles, makes] = await Promise.all([
+    api('/vehicles?pageSize=8'),
+    api('/catalog/makes').catch(() => []),
+  ]);
+  const items = vehicles.items || vehicles;
+  const makeList = Array.isArray(makes) ? makes : makes.items || [];
+  $('#app').innerHTML = webShell(`
+    <section class="hero">
+      <div class="hero-content">
+        <span class="eyebrow">Mua bán xe chính chủ</span>
+        <h1>Tìm chiếc xe phù hợp, giao dịch an tâm</h1>
+        <p>Tin đăng được kiểm duyệt. Cá nhân định danh qua VNeID, doanh nghiệp xác minh hồ sơ đầy đủ.</p>
+        <form class="search-panel" data-action="hero-search">
+          <input name="keyword" placeholder="Tìm theo tên xe..." aria-label="Từ khóa">
+          <select name="fuelType"><option value="">Nhiên liệu</option><option value="petrol">Xăng</option><option value="diesel">Diesel</option><option value="electric">Điện</option><option value="hybrid">Hybrid</option></select>
+          <select name="transmission"><option value="">Hộp số</option><option value="automatic">Tự động</option><option value="manual">Số sàn</option></select>
+          <button class="btn">${icon('search')} Tìm xe</button>
+        </form>
+        <div class="trust-row"><span>${icon('shield')} Tin đăng xác minh</span><span>${icon('check')} Đặt cọc có đối soát</span><span>${icon('clock')} Cập nhật liên tục</span></div>
+      </div>
+    </section>
+    <div class="container">
+      <section class="section"><div class="section-head"><div><span class="eyebrow">Mới nhất</span><h2>Xe đang bán</h2></div><a class="btn btn-outline btn-sm" href="#/search">Xem tất cả ${icon('arrow')}</a></div>
+        <div class="grid grid-4">${items.map(vehicleCard).join('') || `<div class="surface empty-state" style="grid-column:1/-1"><h3>Chưa có tin đăng</h3><p>Dữ liệu sẽ xuất hiện sau khi seed.</p></div>`}</div>
+      </section>
+      ${makeList.length ? `<section class="section"><div class="section-head"><div><span class="eyebrow">Thương hiệu</span><h2>Tìm theo hãng</h2></div></div>
+        <div class="brand-strip">${makeList.slice(0, 8).map((mk) => `<a class="brand-tile" href="#/search?make=${esc(mk.code)}"><span class="brand-symbol">${esc((mk.name || '?')[0])}</span>${esc(mk.name)}</a>`).join('')}</div>
+      </section>` : ''}
+    </div>`, 'home');
+});
+
+route('/search', async (_p, params) => {
+  const qs = new URLSearchParams(params);
+  qs.set('pageSize', '24');
+  const data = await api(`/vehicles?${qs}`);
+  const items = data.items || data;
+  $('#app').innerHTML = webShell(`
+    <div class="container"><div class="page-heading"><div><span class="eyebrow">Kết quả</span><h1>${data.total ?? items.length} xe phù hợp</h1></div></div>
+      <form class="search-panel" style="margin:0 auto 22px;grid-template-columns:1.2fr 1fr 1fr auto" data-action="hero-search">
+        <input name="keyword" placeholder="Tìm theo tên xe..." value="${esc(params.get('keyword') || '')}">
+        <select name="fuelType"><option value="">Nhiên liệu</option>${['petrol', 'diesel', 'electric', 'hybrid'].map((f) => `<option ${params.get('fuelType') === f ? 'selected' : ''}>${f}</option>`).join('')}</select>
+        <select name="transmission"><option value="">Hộp số</option>${['automatic', 'manual'].map((t) => `<option ${params.get('transmission') === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <button class="btn">${icon('search')} Lọc</button>
+      </form>
+      <div class="grid grid-4">${items.map(vehicleCard).join('') || `<div class="surface empty-state" style="grid-column:1/-1"><div class="empty-icon">${icon('search')}</div><h3>Không có xe khớp</h3><p>Thử bỏ bớt điều kiện lọc.</p></div>`}</div>
+    </div>`, 'search');
+});
+
+route('/vehicle/:id', async (p) => {
+  const v = await api(`/vehicles/${p.id}`);
+  const specs = [
+    ['Năm sản xuất', v.year], ['Đã đi', `${Number(v.odometerKm).toLocaleString('vi-VN')} km`],
+    ['Nhiên liệu', fuelLabel(v.fuelType)], ['Hộp số', transLabel(v.transmission)],
+    ['Khu vực', v.location], ['Người bán', v.sellerType === 'business' ? 'Salon (đã xác minh)' : 'Cá nhân'],
+  ];
+  $('#app').innerHTML = webShell(`
+    <div class="container"><div class="detail-layout">
+      <section class="surface surface-pad">
+        <span class="eyebrow">${v.sellerType === 'business' ? 'Salon' : 'Người bán cá nhân'}</span>
+        <h1 style="font-size:28px">${esc(v.title)}</h1>
+        <p class="vehicle-price" style="font-size:26px">${vnd(v.priceVnd)}</p>
+        <span class="status ${statusClass(v.status)}">${esc(v.status.replaceAll('_', ' '))}</span>
+        <div class="divider"></div>
+        ${(v.photos && v.photos.length) ? `<img class="detail-main-photo" src="${esc(v.photos[0])}" alt="${esc(v.title)}" onerror="this.onerror=null;this.src='${photoFallback()}'">` : ''}
+        ${(v.photos && v.photos.length > 1) ? `<div class="thumb-row">${v.photos.slice(1, 6).map((u) => `<img src="${esc(u)}" onerror="this.remove()">`).join('')}</div>` : ''}
+        <div class="detail-specs" style="margin-top:16px">${specs.map(([k, val]) => `<div class="spec"><span>${esc(k)}</span><strong>${esc(val)}</strong></div>`).join('')}</div>
+        <div class="divider"></div>
+        <p style="white-space:pre-wrap">${esc(v.description || 'Chưa có mô tả.')}</p>
+      </section>
+      <aside class="surface surface-pad seller-panel">
+        <div class="seller-profile-head"><span class="avatar">${esc(initials(v.title))}</span>
+          <div><h3>${v.sellerType === 'business' ? 'Showroom' : 'Người bán'}</h3><p class="tiny muted">${esc(v.location)}</p></div></div>
+        <div class="divider"></div>
+        <button class="btn" style="width:100%" data-action="deposit" data-id="${esc(v.id)}">${icon('check')} Đặt cọc xe này</button>
+        <p class="tiny muted" style="margin-top:10px">Tiền đặt cọc được đối soát bởi Aoto trước khi xác nhận.</p>
+      </aside>
+    </div></div>`);
+});
+
+/* ---------- AUTH: chỉ VNeID ---------- */
+route('/auth', () => {
+  $('#app').innerHTML = webShell(`<div class="auth-container"><div class="auth-card surface surface-pad" style="max-width:460px;margin:46px auto">
+    <span class="eyebrow">Thành viên cá nhân</span>
+    <h1 style="font-size:28px">Đăng nhập an toàn với VNeID</h1>
+    <p class="muted tiny">Định danh cá nhân được thiết kế qua luồng xác thực VNeID chính thức. Aoto không lưu mật khẩu VNeID, mã OTP hay thông tin đăng nhập của bạn.</p>
+    <button class="btn" style="width:100%;margin-top:16px" data-action="vneid-login">${icon('shield')} Đăng nhập bằng VNeID</button>
+    <p class="tiny muted" style="margin-top:10px">Prototype chưa kết nối VNeID — thao tác chưa xác thực phiên đăng nhập.</p>
+    <div class="divider"></div>
+    <div class="notice"><strong>Đại diện doanh nghiệp?</strong><p class="tiny" style="margin:4px 0 0">Tài khoản doanh nghiệp được Aoto tạo thủ công sau khi nhận và xác minh hồ sơ (giấy phép kinh doanh, mã số thuế, tài khoản ngân hàng, người đại diện).</p></div>
+  </div></div>`);
+});
+
+route('/account', async () => {
+  if (!state.token) return navigate('#/auth');
+  const me = state.user?.id ? await api('/auth/me').catch(() => state.user) : state.user;
+  $('#app').innerHTML = webShell(`<div class="container"><div class="page-heading"><div><span class="eyebrow">Tài khoản</span><h1>Xin chào, ${esc(me.fullName || me.email)}</h1></div></div>
+    <div class="grid grid-3">
+      <div class="kpi"><div class="kpi-top"><span>Vai trò</span><span class="kpi-icon">${icon('user')}</span></div><strong>${esc(me.role)}</strong></div>
+      <div class="kpi"><div class="kpi-top"><span>Định danh</span><span class="kpi-icon">${icon('shield')}</span></div><strong>${me.identityVerified ? 'Đã xác thực' : 'Chưa'}</strong></div>
+      <div class="kpi"><div class="kpi-top"><span>Tin đăng</span><span class="kpi-icon">${icon('eye')}</span></div><strong><a href="#/my-listings" style="color:var(--green-800)">Xem danh sách</a></strong></div>
+    </div></div>`);
+});
+
+route('/my-listings', async () => {
+  if (!state.token) return navigate('#/auth');
+  const items = await api('/vehicles/mine/listings');
+  $('#app').innerHTML = webShell(`<div class="container"><div class="page-heading"><div><span class="eyebrow">Tin đăng của tôi</span><h1>${items.length} tin</h1></div><a class="btn" href="#/new-listing">${icon('plus')} Đăng tin mới</a></div></div>
+    <div class="container"><div class="grid grid-4">${items.map(vehicleCard).join('') || `<div class="surface empty-state" style="grid-column:1/-1"><div class="empty-icon">${icon('file')}</div><h3>Chưa có tin đăng</h3><p>Tạo tin đầu tiên của bạn.</p></div>`}</div></div>`);
+});
+
+/* ---------- Đăng tin (wizard 4 bước, hỗ trợ ảnh ngoài) ---------- */
+let listingDraft = { step: 1, data: {}, photoUrls: [] };
+route('/new-listing', async () => {
+  if (!state.token) { toast('Bạn cần đăng nhập để đăng tin.', 'error'); navigate('#/auth'); render(); return; }
+  const [makes, provinces] = await Promise.all([api('/catalog/makes').catch(() => []), api('/catalog/provinces').catch(() => [])]);
+  const step = listingDraft.step;
+  const d = listingDraft.data;
+  const steps = ['Thông tin cơ bản', 'Thông số kỹ thuật', 'Mô tả & giá', 'Hình ảnh'];
+  $('#app').innerHTML = webShell(`
+    <div class="container"><div class="page-heading"><div><span class="eyebrow">Người bán</span><h1>Đăng tin bán xe</h1></div></div>
+      <div class="stepper">${steps.map((label, i) => `<div class="step ${i + 1 === step ? 'current' : i + 1 < step ? 'done' : ''}">${label}</div>`).join('')}</div>
+      <div class="surface surface-pad" style="max-width:760px">
+        ${step === 1 ? `<div class="form-grid">
+          <div class="field field-full"><label>Tiêu đề tin đăng *</label><input id="lw-title" value="${esc(d.title || '')}" placeholder="VD: Toyota Corolla Cross 1.8V 2023 màu trắng"></div>
+          <div class="field"><label>Hãng xe *</label><select id="lw-make"><option value="">— chọn —</option>${(makes || []).map((m) => `<option value="${esc(m.id)}" ${d.makeId === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Dòng xe *</label><select id="lw-model"><option value="">— chọn hãng trước —</option></select></div>
+          <div class="field"><label>Năm sản xuất *</label><input id="lw-year" type="number" min="1990" max="2027" value="${esc(d.year || 2022)}"></div>
+          <div class="field"><label>Tỉnh / Thành phố *</label><select id="lw-province"><option value="">— chọn —</option>${(provinces || []).map((p) => `<option value="${esc(p.code)}" ${d.provinceCode === p.code ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="field field-full"><label>Địa điểm chi tiết *</label><input id="lw-location" value="${esc(d.location || '')}" placeholder="VD: Quận Cầu Giấy, Hà Nội"></div>
+        </div>` : ''}
+        ${step === 2 ? `<div class="form-grid">
+          <div class="field"><label>Số km đã đi *</label><input id="lw-odo" type="number" min="0" value="${esc(d.odometerKm || 30000)}"></div>
+          <div class="field"><label>Hộp số *</label><select id="lw-transmission"><option value="automatic" ${d.transmission === 'automatic' ? 'selected' : ''}>Tự động</option><option value="manual" ${d.transmission === 'manual' ? 'selected' : ''}>Số sàn</option></select></div>
+          <div class="field"><label>Nhiên liệu *</label><select id="lw-fuel"><option value="petrol" ${d.fuelType === 'petrol' ? 'selected' : ''}>Xăng</option><option value="diesel" ${d.fuelType === 'diesel' ? 'selected' : ''}>Diesel</option><option value="electric" ${d.fuelType === 'electric' ? 'selected' : ''}>Điện</option><option value="hybrid" ${d.fuelType === 'hybrid' ? 'selected' : ''}>Hybrid</option></select></div>
+        </div>` : ''}
+        ${step === 3 ? `<div class="form-grid">
+          <div class="field"><label>Giá bán (VND) *</label><input id="lw-price" type="number" min="0" value="${esc(d.priceVnd || 500000000)}"></div>
+          <div class="field field-full"><label>Mô tả chi tiết</label><textarea id="lw-desc" rows="6" placeholder="Tình trạng xe, lịch sử bảo dưỡng, lý do bán...">${esc(d.description || '')}</textarea></div>
+        </div>` : ''}
+        ${step === 4 ? `
+          <label class="upload-zone"><span><span class="empty-icon">${icon('download')}</span><strong>Tải ảnh xe lên</strong><br><span class="tiny">JPG/PNG · demo (chọn file sẽ lưu URL minh họa)</span></span></label>
+          <div class="divider"></div>
+          <div class="field"><label>Hoặc dán link ảnh bên ngoài (mỗi dòng 1 URL)</label>
+            <textarea id="lw-external" rows="4" placeholder="https://images.unsplash.com/photo-xxx&#10;https://cdn.example.com/xe-cua-toi.jpg">${esc(listingDraft.photoUrls.join('\n'))}</textarea>
+            <p class="tiny muted" style="margin-top:6px">Ảnh bên ngoài hiển thị trực tiếp từ URL — không tải lên server.</p></div>
+          <div class="photo-preview" id="lw-preview"></div>
+        ` : ''}
+        <div class="wizard-actions">
+          ${step > 1 ? `<button class="btn btn-outline" data-action="listing-prev">← Bước trước</button>` : '<span></span>'}
+          ${step < 4 ? `<button class="btn" data-action="listing-next">Tiếp theo →</button>` : `<button class="btn" data-action="listing-submit">Gửi duyệt tin</button>`}
+        </div>
+      </div></div>`);
+  if (step === 1 && d.makeId) {
+    api('/catalog/models').then((models) => {
+      const sel = document.getElementById('lw-model');
+      if (sel) sel.innerHTML = '<option value="">— chọn —</option>' + (models || []).filter((m) => m.parentId === d.makeId)
+        .map((m) => `<option value="${esc(m.id)}" ${d.modelId === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+    });
+  }
+  if (step === 4) {
+    const pv = document.getElementById('lw-preview');
+    const refresh = () => { pv.innerHTML = listingDraft.photoUrls.map((u) => `<img src="${esc(u)}" onerror="this.remove()">`).join(''); };
+    refresh();
+    document.getElementById('lw-external').addEventListener('input', (e) => {
+      listingDraft.photoUrls = collectExternalPhotos(e.target.value);
+      refresh();
+    });
+  }
+});
+
+function captureListingStep() {
+  const step = listingDraft.step;
+  const d = listingDraft.data;
+  const get = (id) => document.getElementById(id)?.value?.trim();
+  if (step === 1) Object.assign(d, { title: get('lw-title'), makeId: get('lw-make'), modelId: get('lw-model'), year: Number(get('lw-year') || 0), provinceCode: get('lw-province'), location: get('lw-location') });
+  if (step === 2) Object.assign(d, { odometerKm: Number(get('lw-odo') || 0), transmission: get('lw-transmission'), fuelType: get('lw-fuel') });
+  if (step === 3) Object.assign(d, { priceVnd: Number(get('lw-price') || 0), description: get('lw-desc') });
+  if (step === 4) listingDraft.photoUrls = collectExternalPhotos(document.getElementById('lw-external')?.value);
+}
+
+/* ---------- CMS pages ---------- */
+route('/cms', async () => {
+  if (!state.token) return renderCmsLogin();
+  const [users, accounts, deposits, vehicles] = await Promise.all([
+    api('/users').catch(() => []), api('/cms/business-accounts').catch(() => []),
+    api('/deposits').catch(() => []), api('/vehicles?pageSize=50').catch(() => ({ items: [] })),
+  ]);
+  const vitems = vehicles.items || vehicles || [];
+  const pending = vitems.filter((v) => v.status === 'pending_review');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Dashboard</span><h1>Tổng quan vận hành</h1><p>Số liệu mẫu từ prototype — không phải số liệu thực.</p></div></div>
+    <div class="grid grid-3" style="margin-top:18px">
+      ${kpiCard('Người dùng', (users.length ?? 0), 'Tài khoản toàn hệ thống', 'user')}
+      ${kpiCard('Tài khoản doanh nghiệp', (accounts.length ?? 0), 'Tạo thủ công sau xác minh', 'shield')}
+      ${kpiCard('Tin chờ duyệt', pending.length, 'Hàng đợi kiểm duyệt', 'clock')}
+      ${kpiCard('Yêu cầu đặt cọc', (deposits.length ?? 0), 'Toàn bộ trạng thái', 'download')}
+    </div>
+    <div class="surface surface-pad" style="margin-top:18px"><div class="section-head"><h2>Đặt cọc gần đây</h2></div>
+      <div class="table-wrap"><table><thead><tr><th>Mã</th><th>Số tiền</th><th>Trạng thái</th></tr></thead>
+      <tbody>${(deposits || []).slice(0, 5).map((d) => `<tr><td><strong>${esc(d.referenceCode)}</strong></td><td>${vnd(d.amountVnd)}</td><td><span class="status ${statusClass(d.status)}">${esc(d.status.replaceAll('_', ' '))}</span></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Không có dữ liệu</td></tr>'}</tbody></table></div>
+    </div>`);
+});
+
+route('/cms/business-accounts', async () => {
+  if (!state.token) return renderCmsLogin();
+  const accounts = await api('/cms/business-accounts');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Doanh nghiệp</span><h1>Tài khoản doanh nghiệp</h1><p>Chỉ quản trị viên tạo tài khoản sau khi nhận đủ và đối chiếu hồ sơ.</p></div>
+      <div class="admin-title-actions"><button class="btn" data-action="new-business-account">${icon('plus')} Tạo tài khoản doanh nghiệp</button></div></div>
+    <div class="notice">Không có luồng tự đăng ký doanh nghiệp công khai. Cần xác minh: giấy phép kinh doanh · mã số thuế · tài khoản ngân hàng · người đại diện.</div>
+    <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Mã</th><th>Doanh nghiệp</th><th>Số giấy phép</th><th>MST</th><th>Ngân hàng</th><th>Hồ sơ</th><th>Trạng thái</th></tr></thead>
+    <tbody>${(accounts || []).map((a) => `<tr>
+      <td><strong>${esc(a.code)}</strong></td><td>${esc(a.companyName)}</td><td>${esc(a.businessLicenseNumber || '—')}</td>
+      <td>${esc(a.taxCode)}</td><td>${esc(a.bankName || '—')}</td>
+      <td><span class="status ${a.documentsVerified ? 'status-verified' : 'status-pending'}">${a.documentsVerified ? 'Verified' : 'Pending'}</span></td>
+      <td><span class="status ${statusClass(a.status)}">${esc(a.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">Chưa có tài khoản doanh nghiệp</td></tr>'}</tbody></table></div>
+    <div id="ba-form-root"></div>`);
+});
+
+window.openCreateBusiness = function () {
+  $('#ba-form-root').innerHTML = `
+    <div class="modal-backdrop"><div class="modal modal-wide">
+      <div class="modal-head"><h2>Tạo tài khoản doanh nghiệp</h2><button class="icon-btn" data-action="close-ba-form">${icon('close')}</button></div>
+      <div class="notice">Chỉ tiếp tục sau khi đã nhận và đối chiếu hồ sơ theo quy trình nội bộ.</div>
+      <form id="ba-form" style="margin-top:12px">
+        <div class="form-grid">
+          <div class="field field-full"><label>Tên pháp lý doanh nghiệp *</label><input name="companyName" required maxlength="120" placeholder="Công ty TNHH ..."></div>
+          <div class="field"><label>Số GCN đăng ký kinh doanh *</label><input name="businessLicenseNumber" required maxlength="50"></div>
+          <div class="field"><label>Mã số thuế *</label><input name="taxCode" required maxlength="20"></div>
+          <div class="field"><label>Người đại diện *</label><input name="representativeName" required maxlength="150"></div>
+          <div class="field"><label>Email liên hệ *</label><input name="email" type="email" required></div>
+          <div class="field field-full"><label>Địa chỉ trụ sở *</label><input name="address" required></div>
+          <div class="field"><label>Ngân hàng *</label><input name="bankName" required></div>
+          <div class="field"><label>Số tài khoản *</label><input name="bankAccountNumber" required inputmode="numeric"></div>
+          <div class="field"><label>Chủ tài khoản *</label><input name="bankAccountHolder" required></div>
+          <div class="field field-full"><label>UUID người dùng chủ tài khoản (users.id) *</label><input name="ownerId" required placeholder="Lấy từ CMS Người dùng"></div>
+        </div>
+        <div class="divider"></div>
+        <strong style="font-size:12px">Checklist giấy tờ đã nhận và đối chiếu *</strong>
+        <label class="filter-check"><input type="checkbox" id="doc-business-license" checked> Giấy chứng nhận đăng ký kinh doanh</label>
+        <label class="filter-check"><input type="checkbox" id="doc-tax-code" checked> Hồ sơ / mã số thuế khớp</label>
+        <label class="filter-check"><input type="checkbox" id="doc-bank-confirmation" checked> Xác nhận tài khoản ngân hàng</label>
+        <label class="filter-check"><input type="checkbox" id="doc-representative-id" checked> Giấy tờ định danh người đại diện</label>
+        <label class="payment-consent" style="margin-top:10px"><input type="checkbox" id="documents-verified" required><span>Tôi xác nhận đã nhận đủ giấy tờ bắt buộc và đối chiếu thông tin pháp nhân, mã số thuế, tài khoản ngân hàng.</span></label>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-ba-form">Hủy</button><button class="btn">Tạo tài khoản</button></div>
+      </form></div></div>`;
+  $('#ba-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const map = { 'doc-business-license': 'business_license', 'doc-tax-code': 'tax_code', 'doc-bank-confirmation': 'bank_confirmation', 'doc-representative-id': 'representative_id' };
+    const documents = Object.keys(map).filter((k) => document.getElementById(k)?.checked)
+      .map((k) => ({ docType: map[k], fileUrl: '/uploads/demo/placeholder.pdf' }));
+    try {
+      await api('/cms/business-accounts', { method: 'POST', body: { ...f, documents, documentsVerified: document.getElementById('documents-verified').checked } });
+      toast('Đã tạo tài khoản doanh nghiệp.');
+      navigate('#/cms/business-accounts'); render();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+};
+
+route('/cms/deposits', async () => {
+  if (!state.token) return renderCmsLogin();
+  const deposits = await api('/deposits');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Giao dịch</span><h1>Đặt cọc</h1><p>Nhận chứng từ → đối soát → xác nhận đã nhận tiền. Người dùng không thể tự xác nhận.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Mã</th><th>Số tiền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+    <tbody>${(deposits || []).map((d) => `<tr><td><strong>${esc(d.referenceCode)}</strong></td><td>${vnd(d.amountVnd)}</td>
+      <td><span class="status ${statusClass(d.status)}">${esc(d.status.replaceAll('_', ' '))}</span></td>
+      <td><div class="table-actions">
+        ${d.status === 'pending_payment' ? `<button class="btn btn-sm" data-action="deposit-proof" data-id="${esc(d.id)}">Nhận chứng từ</button>` : ''}
+        ${d.status === 'verifying' ? `<button class="btn btn-sm" data-action="deposit-paid" data-id="${esc(d.id)}">Xác nhận đã nhận tiền</button>` : ''}
+        ${!['pending_payment', 'verifying'].includes(d.status) ? '<span class="tiny muted">—</span>' : ''}
+      </div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Không có dữ liệu</td></tr>'}</tbody></table></div>`);
+});
+
+route('/cms/vehicles', async () => {
+  if (!state.token) return renderCmsLogin();
+  const data = await api('/vehicles?pageSize=50');
+  const items = data.items || data;
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Kiểm duyệt</span><h1>Tin đăng</h1><p>Trạng thái: draft → pending_review → published / rejected.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Tiêu đề</th><th>Giá</th><th>Người bán</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+    <tbody>${(items || []).map((v) => `<tr><td>${esc(v.title)}</td><td>${vnd(v.priceVnd)}</td><td>${v.sellerType === 'business' ? 'Salon' : 'Cá nhân'}</td>
+      <td><span class="status ${statusClass(v.status)}">${esc(v.status.replaceAll('_', ' '))}</span></td>
+      <td><div class="table-actions">${v.status === 'pending_review' ? `
+        <button class="btn btn-sm" data-action="moderate" data-id="${esc(v.id)}" data-verdict="approve">Duyệt</button>
+        <button class="btn btn-danger btn-sm" data-action="moderate" data-id="${esc(v.id)}" data-verdict="reject">Từ chối</button>` : '<span class="tiny muted">—</span>'}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Không có dữ liệu</td></tr>'}</tbody></table></div>`);
+});
+
+route('/cms/moderation', async () => {
+  if (!state.token) return renderCmsLogin();
+  const data = await api('/vehicles?pageSize=50');
+  const items = (data.items || data).filter((v) => v.status === 'pending_review');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Vận hành</span><h1>Kiểm duyệt & báo cáo</h1><p>Hàng đợi tin đăng chờ duyệt và báo cáo vi phạm từ người dùng.</p></div></div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="surface surface-pad"><h3>Tin chờ duyệt (${items.length})</h3>
+        ${items.length ? items.map((v) => `<div class="divider"></div><p><strong>${esc(v.title)}</strong> · ${vnd(v.priceVnd)}</p><div class="table-actions"><button class="btn btn-sm" data-action="moderate" data-id="${esc(v.id)}" data-verdict="approve">Duyệt</button><button class="btn btn-danger btn-sm" data-action="moderate" data-id="${esc(v.id)}" data-verdict="reject">Từ chối</button></div>`).join('') : '<p class="muted">Không có tin chờ duyệt.</p>'}
+      </div>
+      <div class="surface surface-pad"><h3>Báo cáo vi phạm</h3><p class="muted tiny">Chưa có báo cáo nào trong hệ thống demo.</p></div>
+    </div>`);
+});
+
+route('/cms/users', async () => {
+  if (!state.token) return renderCmsLogin();
+  const users = await api('/users');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Vận hành</span><h1>Người dùng</h1><p>${users.length} tài khoản toàn hệ thống.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Email</th><th>Vai trò</th><th>Định danh</th><th>Trạng thái</th></tr></thead>
+    <tbody>${(users || []).map((u) => `<tr><td><strong>${esc(u.fullName)}</strong></td><td>${esc(u.email)}</td><td>${esc(u.role)}</td>
+      <td><span class="status ${u.identityVerified ? 'status-verified' : 'status-pending'}">${u.identityVerified ? 'Đã VNeID' : 'Chưa'}</span></td>
+      <td><span class="status ${statusClass(u.status)}">${esc(u.status)}</span></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Không có dữ liệu</td></tr>'}</tbody></table></div>`);
+});
+
+route('/cms/salons', async () => {
+  if (!state.token) return renderCmsLogin();
+  const accounts = await api('/cms/business-accounts');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Vận hành</span><h1>Showroom</h1><p>Danh sách salon/đại lý đã được cấp tài khoản doanh nghiệp.</p></div></div>
+    <div class="grid grid-3" style="margin-top:16px">${(accounts || []).map((a) => `
+      <div class="surface surface-pad"><div class="seller-profile-head"><span class="avatar">${esc(initials(a.companyName))}</span>
+        <div><h3 style="font-size:14px">${esc(a.companyName)}</h3><p class="tiny muted">${esc(a.code)} · ${esc(a.address || '')}</p></div></div>
+      <div class="divider"></div><p class="tiny muted">Người đại diện: ${esc(a.representativeName)}</p><p class="tiny muted">Email: ${esc(a.email)}</p>
+      <div class="divider"></div><span class="status ${statusClass(a.status)}">${esc(a.status)}</span></div>`).join('') || '<p class="muted">Chưa có showroom.</p>'}</div>`);
+});
+
+route('/cms/audit', async () => {
+  if (!state.token) return renderCmsLogin();
+  const logs = await api('/cms/audit?limit=50').catch(() => []);
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Hệ thống</span><h1>Audit log</h1><p>Lịch sử thao tác quản trị (tạo/xóa/đổi trạng thái).</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Hành động</th><th>Đối tượng</th><th>Chi tiết</th></tr></thead>
+    <tbody>${(logs || []).map((l) => `<tr><td class="tiny">${new Date(l.createdAt).toLocaleString('vi-VN')}</td><td><strong>${esc(l.action)}</strong></td><td>${esc(l.entityType)} · ${esc(String(l.entityId).slice(0, 8))}…</td><td class="tiny muted">${esc(JSON.stringify(l.payload || {})).slice(0, 90)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Chưa có log</td></tr>'}</tbody></table></div>`);
+});
+
+route('/cms/notifications', async () => {
+  if (!state.token) return renderCmsLogin();
+  const notis = await api('/notifications').catch(() => []);
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Hệ thống</span><h1>Thông báo</h1><p>Thông báo in-app đã gửi tới người dùng.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Tiêu đề</th><th>Nội dung</th><th>Đã đọc</th></tr></thead>
+    <tbody>${(notis || []).map((n) => `<tr><td class="tiny">${new Date(n.createdAt).toLocaleString('vi-VN')}</td><td><strong>${esc(n.title)}</strong></td><td class="tiny">${esc(n.body || '')}</td><td><span class="status ${n.isRead ? 'status-active' : 'status-pending'}">${n.isRead ? 'Rồi' : 'Chưa'}</span></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Không có thông báo</td></tr>'}</tbody></table></div>`);
+});
+
+route('/cms/catalog', async (_p, params) => {
+  if (!state.token) return renderCmsLogin();
+  const GROUP_META = {
+    makes: { name: 'Hãng xe', desc: 'Thương hiệu ô tô (Toyota, Mazda, ...)' },
+    models: { name: 'Dòng xe', desc: 'Dòng xe thuộc một hãng (Corolla Cross, CX-5, ...)' },
+    provinces: { name: 'Tỉnh / Thành phố', desc: 'Khu vực đăng tin' },
+    fuels: { name: 'Nhiên liệu', desc: 'Xăng, diesel, điện, hybrid' },
+    transmissions: { name: 'Hộp số', desc: 'Tự động, số sàn' },
+    colors: { name: 'Màu xe', desc: 'Màu ngoại thất phổ biến' },
+    seats: { name: 'Số chỗ', desc: '2, 4, 5, 7 chỗ ...' },
+  };
+  const groups = await api('/catalog').catch(() => []);
+  const activeGroup = params.get('group') || (groups[0]?.groupCode ?? 'makes');
+  const items = await api(`/catalog/${activeGroup}`).catch(() => []);
+  const meta = GROUP_META[activeGroup] || { name: activeGroup, desc: 'Nhóm danh mục' };
+  const parents = activeGroup === 'models' ? await api('/catalog/makes').catch(() => []) : [];
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Danh mục</span><h1>Catalog</h1><p>Quản trị dữ liệu dùng chung cho toàn hệ thống (hãng xe, dòng xe, khu vực...). Sửa đổi áp dụng ngay cho web, CMS và app.</p></div>
+      <div class="admin-title-actions"><button class="btn" data-action="catalog-new" data-group="${esc(activeGroup)}">${icon('plus')} Thêm mục</button></div></div>
+    <div class="catalog-tree" style="margin-bottom:16px">${icon('layers')} <strong>Nhóm:</strong>
+      ${(groups || []).map((g) => `<a class="quick-chip" href="#/cms/catalog?group=${esc(g.groupCode)}" style="${g.groupCode === activeGroup ? 'border-color:var(--green-600);color:var(--green-800);font-weight:700' : ''}">${esc(GROUP_META[g.groupCode]?.name || g.groupCode)} <span class="tiny muted">(${g.count})</span></a>`).join('') || '<span class="tiny muted">Chưa có nhóm nào — thêm mục đầu tiên để tạo nhóm.</span>'}
+    </div>
+    <div class="section-head"><div><h2 style="margin:0">${esc(meta.name)}</h2><p class="muted" style="margin:4px 0 0">${esc(meta.desc)}</p></div><span class="pill">${items.length} mục</span></div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Mã</th><th>Tên hiển thị</th>${activeGroup === 'models' ? '<th>Thuộc hãng</th>' : ''}<th>Thứ tự</th><th>Kích hoạt</th><th>Thao tác</th></tr></thead>
+    <tbody>${(items || []).map((it) => `<tr>
+      <td><code>${esc(it.code)}</code></td><td><strong>${esc(it.name)}</strong></td>
+      ${activeGroup === 'models' ? `<td class="tiny muted">${esc((parents || []).find((p) => p.id === it.parentId)?.name || '—')}</td>` : ''}
+      <td>${esc(it.sortOrder)}</td>
+      <td><span class="status ${it.isActive ? 'status-active' : 'status-draft'}">${it.isActive ? 'Kích hoạt' : 'Tắt'}</span></td>
+      <td><div class="table-actions">
+        <button class="icon-btn" title="Sửa" data-action="catalog-edit" data-item='${esc(JSON.stringify(it))}'>${icon('edit')}</button>
+        <button class="icon-btn" title="Xóa" data-action="catalog-delete" data-id="${esc(it.id)}" data-name="${esc(it.name)}">${icon('trash')}</button>
+      </div></td></tr>`).join('') || `<tr><td colspan="6" class="muted">Nhóm trống — thêm mục đầu tiên.</td></tr>`}</tbody></table></div>
+    <div id="catalog-form-root"></div>`);
+});
+
+window.openCatalogForm = function (groupCode, item = null) {
+  const isNew = !item;
+  $('#catalog-form-root').innerHTML = `
+    <div class="modal-backdrop"><div class="modal">
+      <div class="modal-head"><h2>${isNew ? 'Thêm mục danh mục' : 'Sửa mục danh mục'}</h2><button class="icon-btn" data-action="close-catalog-form">${icon('close')}</button></div>
+      <form id="catalog-form">
+        <input type="hidden" name="groupCode" value="${esc(groupCode)}">
+        ${isNew ? `<div class="form-grid">
+          <div class="field"><label>Mã (code) *</label><input name="code" required maxlength="60" placeholder="vd: toyota"></div>
+          <div class="field"><label>Tên hiển thị *</label><input name="name" required maxlength="150" placeholder="vd: Toyota"></div>
+          ${groupCode === 'models' ? `<div class="field field-full"><label>Thuộc hãng (parent)</label><select name="parentId"><option value="">— không —</option></select></div>` : ''}
+        </div>` : ''}
+        ${!isNew ? `<div class="form-grid">
+          <div class="field"><label>Tên hiển thị *</label><input name="name" required maxlength="150" value="${esc(item.name)}"></div>
+          <div class="field"><label>Thứ tự</label><input name="sortOrder" type="number" value="${esc(item.sortOrder)}"></div>
+          <label class="filter-check"><input type="checkbox" name="isActive" ${item.isActive ? 'checked' : ''}> Kích hoạt</label>
+        </div>` : ''}
+        <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-catalog-form">Hủy</button><button class="btn">${isNew ? 'Thêm' : 'Lưu thay đổi'}</button></div>
+      </form></div></div>`;
+  $('#catalog-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try {
+      if (isNew) await api('/catalog', { method: 'POST', body: { groupCode, code: f.code, name: f.name, parentId: f.parentId || null, sortOrder: 0, isActive: true } });
+      else await api(`/catalog/${item.id}`, { method: 'PUT', body: { name: f.name, sortOrder: Number(f.sortOrder || 0), isActive: !!f.isActive } });
+      toast(isNew ? 'Đã thêm mục.' : 'Đã lưu thay đổi.');
+      navigate(`#/cms/catalog?group=${groupCode}`); render();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  if (groupCode === 'models') {
+    api('/catalog/makes').then((makes) => {
+      const sel = document.querySelector('#catalog-form select[name=parentId]');
+      if (sel) sel.insertAdjacentHTML('beforeend', (makes || []).map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join(''));
+    });
+  }
+};
+
+/* ---------- Nội dung (WYSIWYG editor kiểu FCKEditor) ---------- */
+route('/cms/content', async () => {
+  if (!state.token) return renderCmsLogin();
+  const pages = await api('/cms/content').catch(() => []);
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Nội dung</span><h1>Trang nội dung</h1><p>Trang tĩnh: hướng dẫn, quy định, giới thiệu.</p></div>
+      <div class="admin-title-actions"><button class="btn" data-action="content-new">${icon('plus')} Thêm trang</button></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Slug</th><th>Tiêu đề</th><th>Nhóm</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+    <tbody>${(pages || []).map((p) => `<tr><td><code>${esc(p.slug)}</code></td><td><strong>${esc(p.title)}</strong></td><td>${esc(p.category)}</td>
+      <td><span class="status ${p.status === 'published' ? 'status-active' : 'status-draft'}">${esc(p.status)}</span></td>
+      <td><div class="table-actions"><button class="icon-btn" data-action="content-edit" data-id="${esc(p.id)}">${icon('edit')}</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Chưa có trang nội dung</td></tr>'}</tbody></table></div>
+    <div id="content-form-root"></div>`);
+});
+
+route('/cms/legal', async () => {
+  if (!state.token) return renderCmsLogin();
+  const pages = await api('/cms/content').catch(() => []);
+  const legal = (pages || []).filter((p) => p.category === 'legal');
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Nội dung</span><h1>Nội dung pháp lý</h1><p>Điều khoản, chính sách — hiển thị công khai trên website.</p></div>
+      <div class="admin-title-actions"><button class="btn" data-action="content-new">${icon('plus')} Thêm văn bản</button></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Slug</th><th>Tiêu đề</th><th>Trạng thái</th><th>Cập nhật</th><th>Thao tác</th></tr></thead>
+    <tbody>${legal.map((p) => `<tr><td><code>${esc(p.slug)}</code></td><td><strong>${esc(p.title)}</strong></td>
+      <td><span class="status ${p.status === 'published' ? 'status-active' : 'status-draft'}">${esc(p.status)}</span></td>
+      <td class="tiny">${new Date(p.updatedAt).toLocaleDateString('vi-VN')}</td>
+      <td><button class="icon-btn" data-action="content-edit" data-id="${esc(p.id)}">${icon('edit')}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Chưa có văn bản pháp lý</td></tr>'}</tbody></table></div>
+    <div id="content-form-root"></div>`);
+});
+
+window.openContentForm = async function (id = null) {
+  let page = null;
+  if (id) page = await api(`/cms/content/${id}`).catch(() => null);
+  $('#content-form-root').innerHTML = `
+    <div class="modal-backdrop"><div class="modal modal-wide">
+      <div class="modal-head"><h2>${page ? 'Sửa trang' : 'Thêm trang'}</h2><button class="icon-btn" data-action="close-content-form">${icon('close')}</button></div>
+      <form id="content-form">
+        <div class="form-grid">
+          <div class="field"><label>Slug *</label><input name="slug" required value="${esc(page?.slug || '')}" placeholder="huong-dan-an-toan"></div>
+          <div class="field"><label>Tiêu đề *</label><input name="title" required value="${esc(page?.title || '')}"></div>
+          <div class="field"><label>Nhóm</label><input name="category" value="${esc(page?.category || 'legal')}"></div>
+          <div class="field"><label>Trạng thái</label><select name="status"><option value="published" ${page?.status === 'published' ? 'selected' : ''}>published</option><option</option></select></div>
+          <div class="field field-full"><label>Tóm tắt</label><input name="summary" value="${esc(page?.summary || '')}"></div>
+          <div class="field field-full"><label>Nội dung (WYSIWYG)</label>
+            <div class="editor-toolbar">
+              <button type="button" class="editor-btn" data-cmd="bold" title="Đậm"><b>B</b></button>
+              <button type="button" class="editor-btn" data-cmd="italic" title="Nghiêng"><i>I</i></button>
+              <button type="button" class="editor-btn" data-cmd="underline" title="Gạch chân"><u>U</u></button>
+              <span class="editor-sep"></span>
+              <button type="button" class="editor-btn" data-cmd="formatBlock" data-value="h2" title="Tiêu đề">H2</button>
+              <button type="button" class="editor-btn" data-cmd="formatBlock" data-value="h3" title="Tiêu đề phụ">H3</button>
+              <button type="button" class="editor-btn" data-cmd="formatBlock" data-value="p" title="Đoạn văn">P</button>
+              <span class="editor-sep"></span>
+              <button type="button" class="editor-btn" data-cmd="insertUnorderedList" title="Danh sách">• Danh sách</button>
+              <button type="button" class="editor-btn" data-cmd="insertOrderedList" title="Danh sách số">1. Đánh số</button>
+              <span class="editor-sep"></span>
+              <button type="button" class="editor-btn" data-cmd="quote" title="Trích dẫn">❝ Trích</button>
+              <button type="button" class="editor-btn" data-cmd="link" title="Chèn link">🔗 Link</button>
+              <button type="button" class="editor-btn" data-cmd="image" title="Chèn ảnh từ URL bên ngoài">🖼 Ảnh URL</button>
+              <button type="button" class="editor-btn" data-cmd="unlink" title="Bỏ link">Bỏ link</button>
+              <span class="editor-sep"></span>
+              <button type="button" class="editor-btn" data-cmd="removeFormat" title="Xóa định dạng">⌫ Xóa định dạng</button>
+              <button type="button" class="editor-btn" data-cmd="viewHtml" title="Xem/chỉnh HTML">&lt;/&gt; HTML</button>
+            </div>
+            <div id="content-body-editor" class="rich-editor" contenteditable="true" data-placeholder="Viết nội dung tại đây...">${page?.body || ''}</div>
+            <textarea id="content-body-source" hidden>${esc(page?.body || '')}</textarea>
+            <p class="tiny muted" style="margin-top:6px">Nhấn 🖼 để chèn ảnh từ URL bên ngoài (CDN, S3, imgur...). Nút &lt;/&gt; chuyển sang chế độ HTML.</p>
+          </div>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-content-form">Hủy</button><button class="btn">Lưu</button></div>
+      </form></div></div>`;
+  document.querySelectorAll('.editor-btn').forEach((btn) => btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    const ed = document.getElementById('content-body-editor');
+    const src = document.getElementById('content-body-source');
+    if (cmd === 'viewHtml') {
+      if (src.hidden) { src.value = ed.innerHTML; src.hidden = false; ed.hidden = true; }
+      else { ed.innerHTML = src.value; src.hidden = true; ed.hidden = false; }
+      return;
+    }
+    if (!ed.hidden) ed.focus();
+    if (cmd === 'quote') document.execCommand('formatBlock', false, 'blockquote');
+    else if (cmd === 'link') { const u = prompt('URL liên kết:', 'https://'); if (u) document.execCommand('createLink', false, u); }
+    else if (cmd === 'image') { const u = prompt('URL ảnh bên ngoài:', 'https://'); if (u) document.execCommand('insertImage', false, u); }
+    else if (cmd === 'unlink') document.execCommand('unlink');
+    else if (cmd === 'removeFormat') document.execCommand('removeFormat');
+    else document.execCommand(cmd, false, btn.dataset.value || null);
+  }));
+  $('#content-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const ed = document.getElementById('content-body-editor');
+    const src = document.getElementById('content-body-source');
+    f.body = src.hidden ? ed.innerHTML : src.value;
+    try {
+      if (page) await api(`/cms/content/${page.id}`, { method: 'PATCH', body: f });
+      else await api('/cms/content', { method: 'POST', body: f });
+      toast('Đã lưu trang nội dung.');
+      $('#content-form-root').innerHTML = '';
+      render();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+};
+
+/* ---------- Trang demo theo prototype ---------- */
+route('/cms/analytics', () => {
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Tổng quan</span><h1>Analytics & báo cáo</h1><p>Lượt xem, tin đăng, chuyển đổi theo tuần.</p></div></div>
+    ${cmsNoteDemo()}
+    <div class="surface chart-panel" style="margin-top:14px"><h3>Lượt xem tin đăng (7 ngày)</h3>
+      <div class="chart">${[38, 52, 44, 70, 64, 88, 76].map((h) => `<div class="bar-group"><div class="bar" style="height:${h}%"></div><div class="bar alt" style="height:${h * 0.6}%"></div></div>`).join('')}</div>
+      <div class="chart-labels"><span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span><span>CN</span></div>
+    </div>
+    <div class="grid grid-3" style="margin-top:16px">
+      ${kpiCard('Lượt xem tuần', '12.480', '+8,2% vs tuần trước', 'eye')}
+      ${kpiCard('Tin đăng mới', '42', '+12 so với tuần trước', 'car')}
+      ${kpiCard('Tỷ lệ đặt cọc', '3,4%', 'Từ lượt xem → cọc', 'download')}
+    </div>`);
+});
+
+route('/cms/media', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Thư viện media', 'Quản lý ảnh và video dùng chung cho tin đăng, banner, nội dung.', [
+    ['corolla-front.jpg', 'Ảnh tin đăng', '245 KB', '2026-10-20'],
+    ['salon-banner.mp4', 'Video banner', '4,2 MB', '2026-10-18'],
+    ['showroom-logo.png', 'Logo salon', '38 KB', '2026-10-15'],
+  ], ['Tên file', 'Loại', 'Kích thước', 'Ngày tải']));
+});
+route('/cms/banners', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Banner & slide', 'Quản lý banner hero, banner in-feed và banner sidebar.', [
+    ['Hero slide 1', 'hero', 'Đang chạy', '2026-10-01 → 2026-11-30'],
+    ['In-feed khuyến mãi', 'infeed', 'Đang chạy', '2026-10-05 → 2026-11-15'],
+    ['Sidebar bảo hiểm', 'sidebar', 'Nháp', '—'],
+  ], ['Tiêu đề', 'Vị trí', 'Trạng thái', 'Thời gian']));
+});
+route('/cms/campaigns', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Chiến dịch', 'Chiến dịch marketing: ưu đãi đăng tin, khuyến mãi gói doanh nghiệp.', [
+    ['Tết 2026 — Gói nổi bật', 'Ưu đãi 20% gói tin nổi bật', 'Đang chạy', '2026-01-05 → 2026-02-10'],
+    ['Salon mới — Miễn phí 30 ngày', 'Dành cho DN mới xác minh', 'Sắp diễn ra', '2026-11-01 → 2026-12-01'],
+  ], ['Chiến dịch', 'Mô tả', 'Trạng thái', 'Thời gian']));
+});
+route('/cms/seo', () => {
+  $('#app').innerHTML = adminShell(demoPanel('SEO', 'Quản lý meta title/description, sitemap và redirect.', [
+    ['/', 'Aoto — Mua bán ô tô chính chủ', 'Đã cấu hình'],
+    ['/search', 'Tìm xe — Aoto', 'Đã cấu hình'],
+    ['/help/huong-dan-an-toan', 'Hướng dẫn an toàn giao dịch', 'Cần bổ sung'],
+  ], ['Đường dẫn', 'Meta title', 'Trạng thái']));
+});
+route('/cms/tags', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Tags & aliases', 'Từ khóa gắn tin đăng và alias chuyển hướng.', [
+    ['sedan', 'Tag', '186 tin'], ['xe-dien', 'Tag', '54 tin'], ['/cu → /search?make=toyota', 'Alias redirect', '—'],
+  ], ['Tag / Alias', 'Loại', 'Sử dụng']));
+});
+route('/cms/import-export', () => {
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Dữ liệu</span><h1>Nhập / xuất Catalog</h1><p>Xuất danh mục hiện tại ra CSV, nhập hàng loạt từ file.</p></div></div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="surface surface-pad"><h3>Xuất dữ liệu</h3><p class="muted tiny">Tải về toàn bộ catalog theo nhóm để chỉnh sửa ngoài.</p>
+        <div class="table-actions" style="margin-top:12px">
+          <button class="btn btn-outline btn-sm" data-action="catalog-export" data-group="makes">Xuất hãng xe</button>
+          <button class="btn btn-outline btn-sm" data-action="catalog-export" data-group="models">Xuất dòng xe</button>
+          <button class="btn btn-outline btn-sm" data-action="catalog-export" data-group="provinces">Xuất tỉnh thành</button>
+        </div></div>
+      <div class="surface surface-pad"><h3>Nhập dữ liệu</h3><p class="muted tiny">Nhập CSV theo cột: groupCode, code, name, parentId, sortOrder.</p>
+        <div class="upload-zone" style="margin-top:12px">${icon('download')}<p class="tiny">Kéo thả file CSV hoặc chọn file</p></div>
+        <p class="tiny muted" style="margin-top:8px">Chức năng nhập cần backend xử lý file — hiện hiển thị giao diện.</p></div>
+    </div>`);
+});
+route('/cms/attributes', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Thuộc tính xe', 'Định nghĩa bộ thuộc tính mở rộng cho tin đăng (màu, số chỗ, động cơ...).', [
+    ['fuelType', 'Select', 'Xăng/Diesel/Điện/Hybrid', 'Bắt buộc'],
+    ['transmission', 'Select', 'Tự động/Số sàn', 'Bắt buộc'],
+    ['seats', 'Number', '2-29', 'Tùy chọn'],
+    ['color', 'Select', '13 màu', 'Tùy chọn'],
+  ], ['Thuộc tính', 'Kiểu', 'Giá trị', 'Ràng buộc']));
+});
+route('/cms/search-terms', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Từ khóa tìm kiếm', 'Từ khóa người dùng hay tìm và gợi ý từ khóa nóng.', [
+    ['toyota corolla cross', '1.204 lượt/tuần', 'Đề xuất hot'],
+    ['vf8', '860 lượt/tuần', 'Đề xuất hot'],
+    ['xe 7 cho gia dinh', '540 lượt/tuần', '—'],
+  ], ['Từ khóa', 'Lượt tìm', 'Gợi ý']));
+});
+route('/cms/templates', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Mẫu thông báo', 'Mẫu nội dung thông báo đặt cọc, duyệt tin, mời kích hoạt DN.', [
+    ['deposit-confirmed', 'Khoản đặt cọc {ref} đã được xác nhận.', 'Hệ thống'],
+    ['listing-approved', 'Tin đăng {title} của bạn đã được duyệt.', 'Hệ thống'],
+    ['business-invite', 'Thư mời kích hoạt tài khoản doanh nghiệp {code}.', 'CMS gửi tay'],
+  ], ['Mã mẫu', 'Nội dung', 'Kênh']));
+});
+route('/cms/support', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Hỗ trợ khách hàng', 'Ticket hỗ trợ và yêu cầu khiếu nại.', [
+    ['#1042', 'Không nhận được OTP VNeID', 'Mới', '2026-10-27'],
+    ['#1039', 'Đợi salon tài khoản nhận cọc', 'Đang xử lý', '2026-10-26'],
+    ['#1031', 'Xin duyệt lại tin bị từ chối', 'Đã xong', '2026-10-24'],
+  ], ['Mã', 'Chủ đề', 'Trạng thái', 'Ngày']));
+});
+route('/cms/roles', () => {
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Hệ thống</span><h1>Vai trò & quyền</h1><p>Phân quyền theo vai trò trong hệ thống RBAC.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Vai trò</th><th>Mô tả</th><th>Quyền chính</th></tr></thead><tbody>
+      <tr><td><strong>admin</strong></td><td>Quản trị viên</td><td>Toàn quyền CMS: duyệt tin, tạo DN, catalog, nội dung, audit</td></tr>
+      <tr><td><strong>business</strong></td><td>Doanh nghiệp/Salon</td><td>Đăng tin dưới danh nghĩa salon, xem tin của mình</td></tr>
+      <tr><td><strong>seller_personal</strong></td><td>Cá nhân đăng tin</td><td>Đăng tin cá nhân sau định danh VNeID</td></tr>
+      <tr><td><strong>buyer</strong></td><td>Người mua</td><td>Tìm xe, lưu tin, đặt cọc</td></tr>
+    </tbody></table></div>${cmsNoteDemo()}`);
+});
+route('/cms/security', () => {
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Hệ thống</span><h1>Bảo mật</h1><p>Chính sách phiên, giới hạn truy cập và dữ liệu nhạy cảm.</p></div></div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="surface surface-pad"><h3>Chính sách hiện tại</h3>
+        <p class="tiny" style="margin-top:10px">• JWT hết hạn 7 ngày, không lưu mật khẩu VNeID/OTP<br>• Rate limit 120 req/phút mỗi IP (throttler)<br>• Số TK ngân hàng DN chỉ hiển thị ở chi tiết, ẩn trong bảng<br>• Helmet + CORS cho API</p></div>
+      <div class="surface surface-pad"><h3>Cần hoàn thiện khi production</h3>
+        <p class="tiny" style="margin-top:10px">• 2FA cho tài khoản admin<br>• Mã hóa cột số TK ngân hàng<br>• Log truy cập bất thường<br>• Backup định kỳ + retention</p></div>
+    </div>`);
+});
+route('/cms/integrations', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Tích hợp', 'Dịch vụ ngoài: VNeID, SMS/OTP, thanh toán, đối tác dữ liệu xe.', [
+    ['VNeID', 'Định danh cá nhân', 'Chưa kết nối (prototype)'],
+    ['SMS OTP', 'Xác thực số điện thoại', 'Chưa kết nối'],
+    ['VietQR / Ngân hàng', 'Đối soát đặt cọc', 'Đối soát thủ công (hiện tại)'],
+    ['Google Analytics', 'Thống kê truy cập', 'Chưa cấu hình'],
+  ], ['Dịch vụ', 'Mục đích', 'Trạng thái']));
+});
+route('/cms/archive', () => {
+  $('#app').innerHTML = adminShell(demoPanel('Lưu trữ & retention', 'Chính sách lưu trữ dữ liệu cũ: tin hết hạn, log, yêu cầu xóa.', [
+    ['Tin đăng hết hạn > 90 ngày', 'Lưu trữ tự động', 'Bật'],
+    ['Audit log > 12 tháng', 'Lưu trữ lạnh', 'Bật'],
+    ['Yêu cầu xóa dữ liệu cá nhân', 'Xử lý trong 30 ngày', 'Thủ công'],
+  ], ['Đối tượng', 'Chính sách', 'Trạng thái']));
+});
+route('/cms/settings', () => {
+  $('#app').innerHTML = adminShell(`
+    <div class="admin-title"><div><span class="eyebrow">Hệ thống</span><h1>Cấu hình hệ thống</h1><p>Tham số vận hành chung.</p></div></div>
+    <div class="surface surface-pad" style="margin-top:14px"><form id="settings-form" onsubmit="event.preventDefault();toast('Đã lưu cấu hình (demo).')">
+      <div class="form-grid">
+        <div class="field"><label>Tên nền tảng</label><input value="OtoChinhChu"></div>
+        <div class="field"><label>Email hỗ trợ</label><input value="support@otochinhchu.vn"></div>
+        <div class="field"><label>Số tiền đặt cọc mặc định (VND)</label><input value="20000000" inputmode="numeric"></div>
+        <div class="field"><label>Số ngày tin đăng hiển thị</label><input value="30" inputmode="numeric"></div>
+      </div>
+      <div class="modal-actions"><button class="btn">Lưu cấu hình</button></div>
+    </form></div>${cmsNoteDemo()}`);
+});
+
+/* ---------- global events ---------- */
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-action]');
+  if (!t) return;
+  const { action, id, verdict } = t.dataset;
+  if (action === 'disable-test-mode') {
+    localStorage.setItem('aoto_test_mode', '0');
+    state.token = null; state.user = null;
+    localStorage.removeItem('aoto_token'); localStorage.removeItem('aoto_user');
+    toast('Đã tắt chế độ test.');
+    setTimeout(() => location.reload(), 400);
+    return;
+  }
+  if (action === 'listing-next') {
+    captureListingStep();
+    const d = listingDraft.data;
+    const need = listingDraft.step === 1 ? [['title', 'Tiêu đề'], ['makeId', 'Hãng xe'], ['modelId', 'Dòng xe'], ['provinceCode', 'Tỉnh/TP'], ['location', 'Địa điểm']] : listingDraft.step === 2 ? [['odometerKm', 'Số km'], ['transmission', 'Hộp số'], ['fuelType', 'Nhiên liệu']] : [['priceVnd', 'Giá bán']];
+    const missing = need.filter(([k]) => !d[k]);
+    if (missing.length) return toast('Vui lòng nhập: ' + missing.map(([, label]) => label).join(', '), 'error');
+    listingDraft.step++; render();
+  }
+  if (action === 'listing-prev') { captureListingStep(); listingDraft.step = Math.max(1, listingDraft.step - 1); render(); }
+  if (action === 'listing-submit') {
+    captureListingStep();
+    const d = listingDraft.data;
+    if (!listingDraft.photoUrls.length) return toast('Cần ít nhất 1 ảnh (tải lên hoặc link ngoài).', 'error');
+    try {
+      const v = await api('/vehicles', { method: 'POST', body: { ...d, photos: listingDraft.photoUrls } });
+      try { await api(`/vehicles/${v.id}/submit`, { method: 'POST' }); } catch { /* draft vẫn hiển thị */ }
+      toast('Đã tạo tin và gửi duyệt. Chờ quản trị viên kiểm duyệt.');
+      listingDraft = { step: 1, data: {}, photoUrls: [] };
+      navigate('#/my-listings'); render();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (action === 'goto-auth') { navigate('#/auth'); render(); }
+  if (action === 'toggle-site-menu') $('#site-nav')?.classList.toggle('open');
+  if (action === 'toggle-sidebar') { $('#admin-sidebar')?.classList.toggle('open'); $('#mobile-overlay')?.classList.toggle('open'); }
+  if (action === 'vneid-login') toast('VNeID chưa được tích hợp trong prototype.', 'error');
+  if (action === 'close-ba-form') $('#ba-form-root').innerHTML = '';
+  if (action === 'cms-logout') { state.token = null; state.user = null; localStorage.removeItem('aoto_token'); localStorage.removeItem('aoto_user'); navigate('#/cms'); render(); }
+  if (action === 'deposit') {
+    if (!state.token) { toast('Bạn cần đăng nhập để đặt cọc.', 'error'); navigate('#/auth'); render(); return; }
+    const amount = Number(prompt('Số tiền đặt cọc (VND):', '20000000'));
+    if (!amount) return;
+    try { await api('/deposits', { method: 'POST', body: { vehicleId: id, amountVnd: amount, method: 'transfer' } }); toast('Đã tạo yêu cầu đặt cọc. Vui lòng chuyển khoản theo mã tham chiếu.'); }
+    catch (err) { toast(err.message, 'error'); }
+  }
+  if (action === 'deposit-proof' || action === 'deposit-paid') {
+    const ref = prompt('Mã tham chiếu thanh toán:') || 'DEMO-REF';
+    try {
+      await api(`/deposits/${id}/${action === 'deposit-proof' ? 'proof' : 'confirm-paid'}`, { method: 'POST', body: { paymentReference: ref } });
+      toast('Đã cập nhật trạng thái đặt cọc.'); render();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (action === 'moderate') {
+    try { await api(`/vehicles/${id}/moderate`, { method: 'POST', body: { action: verdict } }); toast(verdict === 'approve' ? 'Đã duyệt tin.' : 'Đã từ chối tin.'); render(); }
+    catch (err) { toast(err.message, 'error'); }
+  }
+  if (action === 'content-new') window.openContentForm();
+  if (action === 'content-edit') window.openContentForm(t.dataset.id);
+  if (action === 'close-content-form') $('#content-form-root').innerHTML = '';
+  if (action === 'catalog-export') {
+    try {
+      const items = await api(`/catalog/${t.dataset.group}`);
+      const csv = ['groupCode,code,name,parentId,sortOrder', ...items.map((i) => [t.dataset.group, i.code, i.name, i.parentId || '', i.sortOrder].join(','))].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `catalog-${t.dataset.group}.csv`;
+      a.click();
+      toast('Đã xuất CSV.');
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (action === 'new-business-account') window.openCreateBusiness();
+  if (action === 'close-catalog-form') $('#catalog-form-root').innerHTML = '';
+  if (action === 'catalog-new') window.openCatalogForm(t.dataset.group);
+  if (action === 'catalog-edit') { try { window.openCatalogForm(null, JSON.parse(t.dataset.item)); } catch { /* noop */ } }
+  if (action === 'catalog-delete') {
+    if (!confirm(`Xóa mục "${t.dataset.name}" khỏi danh mục? Thao tác không thể hoàn tác.`)) return;
+    try { await api(`/catalog/${id}`, { method: 'DELETE' }); toast('Đã xóa mục.'); render(); } catch (err) { toast(err.message, 'error'); }
+  }
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.matches('[data-action="hero-search"]')) {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+    navigate(`#/search?${qs}`);
+  }
+});
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
